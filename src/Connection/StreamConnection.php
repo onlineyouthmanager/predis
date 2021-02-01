@@ -117,14 +117,14 @@ class StreamConnection extends AbstractConnection
      * @param ParametersInterface $parameters Connection parameters.
      * @param string              $address    Address for stream_socket_client().
      * @param int                 $flags      Flags for stream_socket_client().
-     *
+     * @param resource            $context    Context for the socket resource
      * @return resource
      */
-    protected function createStreamSocket(ParametersInterface $parameters, $address, $flags)
+    protected function createStreamSocket(ParametersInterface $parameters, $address, $flags, $context = null)
     {
         $timeout = (isset($parameters->timeout) ? (float) $parameters->timeout : 5.0);
 
-        if (!$resource = @stream_socket_client($address, $errno, $errstr, $timeout, $flags)) {
+        if (!$resource = @stream_socket_client($address, $errno, $errstr, $timeout, $flags, $context)) {
             $this->onConnectionError(trim($errstr), $errno);
         }
 
@@ -148,10 +148,11 @@ class StreamConnection extends AbstractConnection
      * Initializes a TCP stream resource.
      *
      * @param ParametersInterface $parameters Initialization parameters for the connection.
+     * @param resource            $context    Context for the socket resource
      *
      * @return resource
      */
-    protected function tcpStreamInitializer(ParametersInterface $parameters)
+    protected function tcpStreamInitializer(ParametersInterface $parameters, $context = null)
     {
         if (!filter_var($parameters->host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
             $address = "tcp://$parameters->host:$parameters->port";
@@ -175,7 +176,7 @@ class StreamConnection extends AbstractConnection
             }
         }
 
-        $resource = $this->createStreamSocket($parameters, $address, $flags);
+        $resource = $this->createStreamSocket($parameters, $address, $flags, $context);
 
         return $resource;
     }
@@ -221,13 +222,7 @@ class StreamConnection extends AbstractConnection
      */
     protected function tlsStreamInitializer(ParametersInterface $parameters)
     {
-        $resource = $this->tcpStreamInitializer($parameters);
-        $metadata = stream_get_meta_data($resource);
-
-        // Detect if crypto mode is already enabled for this stream (PHP >= 7.0.0).
-        if (isset($metadata['crypto'])) {
-            return $resource;
-        }
+        $context = stream_context_create();
 
         if (is_array($parameters->ssl)) {
             $options = $parameters->ssl;
@@ -239,9 +234,11 @@ class StreamConnection extends AbstractConnection
             $options['crypto_type'] = STREAM_CRYPTO_METHOD_TLS_CLIENT;
         }
 
-        if (!stream_context_set_option($resource, array('ssl' => $options))) {
+        if (!stream_context_set_option($context, array('ssl' => $options))) {
             $this->onConnectionError('Error while setting SSL context options');
         }
+
+        $resource = $this->tcpStreamInitializer($parameters, $context);
 
         if (!stream_socket_enable_crypto($resource, true, $options['crypto_type'])) {
             $this->onConnectionError('Error while switching to encrypted communication');
