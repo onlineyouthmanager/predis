@@ -124,7 +124,7 @@ class StreamConnection extends AbstractConnection
     {
         $timeout = (isset($parameters->timeout) ? (float) $parameters->timeout : 5.0);
 
-        if (!$resource = @stream_socket_client($address, $errno, $errstr, $timeout, $flags, $context)) {
+        if (!$resource = @stream_socket_client($address, $errno, $errstr, $timeout, $flags, $context !== null ? $context : stream_context_create())) {
             $this->onConnectionError(trim($errstr), $errno);
         }
 
